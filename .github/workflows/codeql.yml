@@ -25,6 +25,12 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
+          
+      - name: Manual Build for dump1090
+        run: |
+          sudo apt update
+          sudo apt install -y make gcc pkg-config libusb-1.0-0-dev
+          make
 
 
       - name: Perform CodeQL Analysis
