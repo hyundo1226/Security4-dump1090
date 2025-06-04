@@ -1,20 +1,20 @@
-name: "CodeQL for dump1090 + TLSsample"
+name: "CodeQL with Markdown Report"
 
 on:
   push:
-    branches: [main]  # 또는 사용 중인 브랜치명
+    branches: [main]
   pull_request:
     branches: [main]
 
 jobs:
   analyze:
-    name: CodeQL Multi-Build Analysis
+    name: CodeQL + Markdown Report
     runs-on: ubuntu-latest
     permissions:
       security-events: write
     strategy:
       matrix:
-        language: [cpp,c]  # C도 cpp로 분석됩니다
+        language: [cpp]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -27,22 +27,25 @@ jobs:
             pkg-config \
             librtlsdr-dev \
             libusb-1.0-0-dev \
-            libssl-dev
+            libssl-dev \
+            python3-pip
+
+      - name: Install SARIF tools
+        run: |
+          pip install sarif-tools
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
 
-      - name: Build dump1090 main project
+      - name: Build dump1090
         run: |
-          echo "🔧 Building main dump1090"
           make clean
           make V=1
 
-      - name: Build TLSsample project
+      - name: Build TLSsample
         run: |
-          echo "🔐 Building TLSsample"
           cd TLSsample
           make clean
           make V=1
@@ -50,3 +53,16 @@ jobs:
 
       - name: Run CodeQL Analysis
         uses: github/codeql-action/analyze@v3
+        with:
+          output: results.sarif
+          output-format: sarif
+
+      - name: Convert SARIF to Markdown
+        run: |
+          sarif markdown results.sarif > codeql-report.md
+
+      - name: Upload Markdown Report
+        uses: actions/upload-artifact@v3
+        with:
+          name: codeql-report
+          path: codeql-report.md
