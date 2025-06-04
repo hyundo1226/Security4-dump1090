@@ -1,37 +1,38 @@
-name: "CodeQL Security Scan"
+name: "CodeQL for dump1090"
 
 on:
   push:
-    branches: [main]   # 또는 default branch
+    branches: [main]
   pull_request:
     branches: [main]
 
 jobs:
   analyze:
-    name: Analyze with CodeQL
+    name: Analyze C Code with CodeQL
     runs-on: ubuntu-latest
     permissions:
       security-events: write
-      actions: read
-      contents: read
     strategy:
       matrix:
-        language: [cpp]   # C는 cpp로 함께 분석됨
+        language: [cpp]  # C 코드도 cpp로 처리됨
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v3
+
+      - name: Install dependencies for dump1090
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config librtlsdr-dev gcc make
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
-          
-      - name: Manual Build for dump1090
-        run: |
-          sudo apt update
-          sudo apt install -y make gcc pkg-config libusb-1.0-0-dev
-          make
 
+      - name: Manual Build
+        run: |
+          make clean
+          make
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
