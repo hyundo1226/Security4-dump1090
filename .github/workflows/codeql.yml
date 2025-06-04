@@ -1,42 +1,52 @@
-name: "CodeQL for dump1090"
+name: "CodeQL for dump1090 + TLSsample"
 
 on:
   push:
-    branches: [main]  # 필요 시 다른 브랜치 이름으로 변경
+    branches: [main]  # 또는 사용 중인 브랜치명
   pull_request:
     branches: [main]
 
 jobs:
   analyze:
-    name: Analyze with CodeQL
+    name: CodeQL Multi-Build Analysis
     runs-on: ubuntu-latest
     permissions:
       security-events: write
     strategy:
       matrix:
-        language: [cpp,c]  # C 코드도 cpp로 분석됨
+        language: [cpp,c]  # C도 cpp로 분석됩니다
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Install dependencies
+      - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             build-essential \
             pkg-config \
             librtlsdr-dev \
-            libusb-1.0-0-dev
+            libusb-1.0-0-dev \
+            libssl-dev
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
 
-      - name: Manual Build using Makefile
+      - name: Build dump1090 main project
         run: |
+          echo "🔧 Building main dump1090"
           make clean
           make V=1
+
+      - name: Build TLSsample project
+        run: |
+          echo "🔐 Building TLSsample"
+          cd TLSsample
+          make clean
+          make V=1
+          cd ..
 
       - name: Run CodeQL Analysis
         uses: github/codeql-action/analyze@v3
