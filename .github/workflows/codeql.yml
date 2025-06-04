@@ -62,7 +62,7 @@ jobs:
           sarif markdown results.sarif > codeql-report.md
 
       - name: Upload Markdown Report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v3.1.2
         with:
           name: codeql-report
           path: codeql-report.md
