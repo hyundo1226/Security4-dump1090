@@ -2,37 +2,41 @@ name: "CodeQL for dump1090"
 
 on:
   push:
-    branches: [main]
+    branches: [main]  # 필요 시 다른 브랜치 이름으로 변경
   pull_request:
     branches: [main]
 
 jobs:
   analyze:
-    name: Analyze C Code with CodeQL
+    name: Analyze with CodeQL
     runs-on: ubuntu-latest
     permissions:
       security-events: write
     strategy:
       matrix:
-        language: [cpp]  # C 코드도 cpp로 처리됨
+        language: [cpp,c]  # C 코드도 cpp로 분석됨
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Install dependencies for dump1090
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y pkg-config librtlsdr-dev gcc make
+          sudo apt-get install -y \
+            build-essential \
+            pkg-config \
+            librtlsdr-dev \
+            libusb-1.0-0-dev
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
 
-      - name: Manual Build
+      - name: Manual Build using Makefile
         run: |
           make clean
-          make
+          make V=1
 
-      - name: Perform CodeQL Analysis
+      - name: Run CodeQL Analysis
         uses: github/codeql-action/analyze@v3
