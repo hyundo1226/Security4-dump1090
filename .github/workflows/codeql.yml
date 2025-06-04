@@ -50,9 +50,12 @@ jobs:
       - name: Run CodeQL Analysis
         uses: github/codeql-action/analyze@v3
         with:
-          output: results.sarif
+          output: results
           output-format: sarif
-
+          
+      - name: Rename SARIF output file
+        run: mv results/*.sarif results.sarif
+  
       - name: Generate Markdown Report from SARIF
         run: |
           python3 - <<EOF
