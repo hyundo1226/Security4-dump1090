@@ -19,7 +19,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Install build dependencies
+      - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -28,11 +28,7 @@ jobs:
             librtlsdr-dev \
             libusb-1.0-0-dev \
             libssl-dev \
-            python3-pip
-
-      - name: Install SARIF tools
-        run: |
-          pip install sarif-tools
+            python3
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
@@ -57,13 +53,45 @@ jobs:
           output: results.sarif
           output-format: sarif
 
-      - name: Convert SARIF to Markdown
+      - name: Generate Markdown Report from SARIF
         run: |
-          sarif markdown results.sarif > codeql-report.md
+          python3 - <<EOF
+          import json
+
+          with open("results.sarif", "r", encoding="utf-8") as f:
+              data = json.load(f)
+
+          runs = data.get("runs", [])
+          issues = []
+
+          for run in runs:
+              results = run.get("results", [])
+              for r in results:
+                  rule = r.get("ruleId", "unknown")
+                  msg = r["message"]["text"]
+                  severity = r.get("level", "warning")
+                  locs = r.get("locations", [])
+                  for loc in locs:
+                      phys = loc["physicalLocation"]
+                      file_path = phys["artifactLocation"]["uri"]
+                      region = phys.get("region", {})
+                      line = region.get("startLine", "?")
+                      issues.append((rule, severity, file_path, line, msg))
+
+          with open("codeql-report.md", "w", encoding="utf-8") as out:
+              out.write("# CodeQL Scan Report\\n\\n")
+              if not issues:
+                  out.write("✅ No issues found.\\n")
+              else:
+                  for rule, severity, file, line, msg in issues:
+                      out.write(f"### ❗ {rule} ({severity})\\n")
+                      out.write(f"- **File**: `{file}`\\n")
+                      out.write(f"- **Line**: {line}\\n")
+                      out.write(f"- **Message**: {msg}\\n\\n")
+          EOF
 
       - name: Upload Markdown Report
         uses: actions/upload-artifact@v4.6.2
         with:
           name: codeql-report
           path: codeql-report.md
-
