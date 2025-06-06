@@ -32,6 +32,9 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
+    // SonarQube Security Issue
+    SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
+
     // 서버 인증서 검증을 위한 신뢰할 CA 인증서 설정 (시험용: 서버 인증서 직접 사용)
     if (!SSL_CTX_load_verify_locations(ctx, SERVER_CERT_FILE, NULL))
     {

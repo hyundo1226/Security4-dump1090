@@ -5,3 +5,6 @@ misc
 frames.js
 .*.swp
 *.pem
+tclient
+tserver
+fclient
