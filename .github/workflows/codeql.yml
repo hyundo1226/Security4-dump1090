@@ -1,0 +1,100 @@
+name: "CodeQL with Markdown Report"
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  analyze:
+    name: CodeQL + Markdown Report
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    strategy:
+      matrix:
+        language: [cpp]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            pkg-config \
+            librtlsdr-dev \
+            libusb-1.0-0-dev \
+            libssl-dev \
+            python3
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+
+      - name: Build dump1090
+        run: |
+          make clean
+          make V=1
+
+      - name: Build TLSsample
+        run: |
+          cd TLSsample
+          make clean
+          make V=1
+          cd ..
+
+      - name: Run CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          output: results
+          output-format: sarif
+          
+      - name: Rename SARIF output file
+        run: mv results/*.sarif results.sarif
+  
+      - name: Generate Markdown Report from SARIF
+        run: |
+          python3 - <<EOF
+          import json
+
+          with open("results.sarif", "r", encoding="utf-8") as f:
+              data = json.load(f)
+
+          runs = data.get("runs", [])
+          issues = []
+
+          for run in runs:
+              results = run.get("results", [])
+              for r in results:
+                  rule = r.get("ruleId", "unknown")
+                  msg = r["message"]["text"]
+                  severity = r.get("level", "warning")
+                  locs = r.get("locations", [])
+                  for loc in locs:
+                      phys = loc["physicalLocation"]
+                      file_path = phys["artifactLocation"]["uri"]
+                      region = phys.get("region", {})
+                      line = region.get("startLine", "?")
+                      issues.append((rule, severity, file_path, line, msg))
+
+          with open("codeql-report.md", "w", encoding="utf-8") as out:
+              out.write("# CodeQL Scan Report\\n\\n")
+              if not issues:
+                  out.write("✅ No issues found.\\n")
+              else:
+                  for rule, severity, file, line, msg in issues:
+                      out.write(f"### ❗ {rule} ({severity})\\n")
+                      out.write(f"- **File**: `{file}`\\n")
+                      out.write(f"- **Line**: {line}\\n")
+                      out.write(f"- **Message**: {msg}\\n\\n")
+          EOF
+
+      - name: Upload Markdown Report
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: codeql-report
+          path: codeql-report.md
