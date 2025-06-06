@@ -5,7 +5,10 @@ CC=gcc
 all: tserver tclient
 
 clean: 
-	rm -f tserver tclient tserver.o tclient.o
+	rm -f tserver.o tclient.o
+
+distclean: clean
+	rm -f tserver tclient 
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $<

@@ -9,6 +9,7 @@
 #include <openssl/err.h>
 
 #include "tls.h"
+#include "../sqlog.h"
 
 SSL_CTX *myInitSSL(void);
 int myFreeSSL(SSL_CTX *ctx, SSL *ssl);
@@ -51,22 +52,25 @@ myInitSSL(void)
     return ctx;
 }
 
-int
-myAcceptSSL (SSL_CTX *ctx, int client_sock, SSL **ppSsl)
+int myAcceptSSL(SSL_CTX *ctx, int client_sock, SSL **ppSsl)
 {
-    int iRet, iRetry=100;
+    int iRet, iRetry = 10, iErr;
     *ppSsl = SSL_new(ctx);
     SSL_set_fd(*ppSsl, client_sock);
 
+
     printf("Performing SSL_accept... for client_socket[%d]\n", client_sock);
-    while(iRetry > 0)
+    while (iRetry > 0)
     {
         iRet = SSL_accept(*ppSsl);
-        if (iRet <= 0) {
-            int err = SSL_get_error(*ppSsl, iRet);
-            fprintf(stderr, "SSL_accept failed with return code %d, SSL_get_error: %d\n", iRet, err);
-            ERR_print_errors_fp(stderr);  // 핵심 디버깅
-        } else {
+        if (iRet <= 0)
+        {
+            iErr = SSL_get_error(*ppSsl, iRet);
+            fprintf(stderr, "SSL_accept failed with return code %d, SSL_get_error: %d\n", iRet, iErr);
+            ERR_print_errors_fp(stderr);
+        }
+        else
+        {
             printf("succeeded\n");
             break;
         }
@@ -74,6 +78,7 @@ myAcceptSSL (SSL_CTX *ctx, int client_sock, SSL **ppSsl)
         iRetry--;
         printf("retry %d left\n", iRetry);
     }
+
     return iRet;
 }
 
@@ -84,7 +89,7 @@ int main(int argc, char *argv[])
 
     if (argc >= 2)
         tls_server_port = atoi(argv[1]);
-        
+
     printf("tls server opens %d\n", tls_server_port);
 
     signal(SIGPIPE, SIG_IGN);

@@ -5,27 +5,30 @@
 #include <openssl/err.h>
 
 //#define TLS_SERVER_PORT 4433
-#define TLS_SERVER_PORT 30004
+#define TLS_SERVER_PORT     30004
+#define TLS_SERVER_PORT_RAW 30005
 
 #define USE_LOCALHOST_CERT 0
 
+#define TLS_CERT_KEY_PATH	"/etc/ssl/dump1090/"
+
 #if USE_LOCALHOST_CERT
 #define TLS_SERVER_IP   "127.0.0.1"
-#define SERVER_CERT_FILE    "lgess2025s4localhostcert.pem"
-#define SERVER_KEY_FILE     "lgess2025s4localhostkey.pem"
-#define FSERVER_CERT_FILE    "lgess2025s4rpicert.pem"
-#define FSERVER_KEY_FILE     "lgess2025s4rpikey.pem"
+#define SERVER_CERT_FILE    TLS_CERT_KEY_PATH"lgess2025s4localhostcert.pem"
+#define SERVER_KEY_FILE     TLS_CERT_KEY_PATH"lgess2025s4localhostkey.pem"
+#define FSERVER_CERT_FILE   TLS_CERT_KEY_PATH"lgess2025s4rpicert.pem"
+#define FSERVER_KEY_FILE    TLS_CERT_KEY_PATH"lgess2025s4rpikey.pem"
 #else
 #define TLS_SERVER_IP   "192.168.43.3"
-#define SERVER_CERT_FILE    "lgess2025s4rpicert.pem"
-#define SERVER_KEY_FILE     "lgess2025s4rpikey.pem"
+#define SERVER_CERT_FILE    TLS_CERT_KEY_PATH"lgess2025s4rpicert.pem"
+#define SERVER_KEY_FILE     TLS_CERT_KEY_PATH"lgess2025s4rpikey.pem"
 #endif
 
-#define CLIENT_CERT_FILE    "lgess2025s4clientcert.pem"
-#define CLIENT_KEY_FILE     "lgess2025s4clientkey.pem"
+#define CLIENT_CERT_FILE    TLS_CERT_KEY_PATH"lgess2025s4clientcert.pem"
+#define CLIENT_KEY_FILE     TLS_CERT_KEY_PATH"lgess2025s4clientkey.pem"
 
-#define FCLIENT_CERT_FILE    "lgess2025s4rpicert.pem"
-#define FCLIENT_KEY_FILE     "lgess2025s4rpikey.pem"
+#define FCLIENT_CERT_FILE    TLS_CERT_KEY_PATH"lgess2025s4rpicert.pem"
+#define FCLIENT_KEY_FILE     TLS_CERT_KEY_PATH"lgess2025s4rpikey.pem"
 
 SSL_CTX * myInitSSL(void);
 int myFreeSSL(SSL_CTX *ctx, SSL *ssl);

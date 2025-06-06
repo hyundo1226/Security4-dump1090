@@ -49,6 +49,11 @@
 #define LG_SECURITY_ENHANCEMENT
 #define LG_SECURITY_ENHANCEMENT_TLS
 #include "TLSsample/tls.h"
+#define LG_SECURITY_ENHANCEMENT_SQLOG
+#include "sqlog.h"
+#include <arpa/inet.h>    // inet_pton(), inet_ntop(), etc.
+#include <arpa/inet.h>
+#include <netinet/in.h>
 
 #define MODES_DEFAULT_RATE         2000000
 #define MODES_DEFAULT_FREQ         1090000000
@@ -91,6 +96,7 @@
 #ifdef LG_SECURITY_ENHANCEMENT_TLS
 // 4343
 #define MODES_NET_OUTPUT_TLSBS_PORT TLS_SERVER_PORT
+#define MODES_NET_OUTPUT_TLRAW_PORT TLS_SERVER_PORT_RAW
 #endif
 #define MODES_NET_OUTPUT_SBS_PORT 30003
 #define MODES_NET_OUTPUT_RAW_PORT 30002
@@ -161,6 +167,7 @@ struct {
 #endif
     int maxfd;                      /* Greatest fd currently active. */
 #ifdef LG_SECURITY_ENHANCEMENT_TLS
+    int tlros; /* TLS-Raw output listening socket. */
     int tlsbsos; /* TLS-SBS output listening socket. */
 #endif
     int sbsos;                      /* SBS output listening socket. */
@@ -199,9 +206,7 @@ struct {
     long long stat_two_bits_fix;
     long long stat_http_requests;
     long long stat_sbs_connections;
-#ifdef LG_SECURITY_ENHANCEMENT_TLS
-    long long stat_tlsbs_connections;
-#endif
+
     long long stat_out_of_phase;
 } Modes;
 
@@ -273,6 +278,20 @@ static long long mstime(void) {
     return mst;
 }
 
+#ifdef LG_SECURITY_ENHANCEMENT_SQLOG
+void on_terminate(int signum) {
+    const char *sig_name = strsignal(signum);
+    SqLog(LOG_LEVEL_I, "Terminating by signal %d (%s)\n", signum, sig_name ? sig_name : "unknown");
+    exit(0);  // clean exit
+}
+void SqLog_setup_signal_handlers() {
+    signal(SIGTERM, on_terminate);  // systemctl stop, kill default
+    signal(SIGINT,  on_terminate);  // Ctrl+C
+    signal(SIGQUIT, on_terminate);  // kill -3
+    signal(SIGHUP,  on_terminate);  // terminal closed
+    // Add more if needed
+}
+#endif
 /* =============================== Initialization =========================== */
 
 void modesInitConfig(void) {
@@ -1936,8 +1955,9 @@ void snipMode(int level) {
 #define MODES_NET_SERVICE_SBS 3
 
 #ifdef LG_SECURITY_ENHANCEMENT_TLS
-#define MODES_NET_SERVICES_TLSBS 4
-#define MODES_NET_SERVICES_NUM 5
+#define MODES_NET_SERVICES_TLRAW    4
+#define MODES_NET_SERVICES_TLSBS    5
+#define MODES_NET_SERVICES_NUM      6
 #else
 #define MODES_NET_SERVICES_NUM 4
 #endif
@@ -1952,8 +1972,8 @@ struct {
     {"HTTP server", &Modes.https, MODES_NET_HTTP_PORT},
     {"Basestation TCP output", &Modes.sbsos, MODES_NET_OUTPUT_SBS_PORT}
 #ifdef LG_SECURITY_ENHANCEMENT_TLS
-    ,
-    {"Basestation TCP output", &Modes.tlsbsos, MODES_NET_OUTPUT_TLSBS_PORT}
+    ,{"TLS Raw output", &Modes.tlros, MODES_NET_OUTPUT_TLRAW_PORT}
+    ,{"TLS SBS output", &Modes.tlsbsos, MODES_NET_OUTPUT_TLSBS_PORT}
 #endif
 };
 
@@ -1994,6 +2014,12 @@ void modesAcceptClients(void) {
     unsigned int j;
     struct client *c;
 
+#ifdef LG_SECURITY_ENHANCEMENT
+    struct sockaddr_in addr;
+    socklen_t addr_len = sizeof(addr);
+    char ip_str[INET_ADDRSTRLEN] = "unknown";
+#endif
+
     for (j = 0; j < MODES_NET_SERVICES_NUM; j++) {
         fd = anetTcpAccept(Modes.aneterr, *modesNetServices[j].socket,
                            NULL, &port);
@@ -2004,7 +2030,18 @@ void modesAcceptClients(void) {
             continue;
         }
 
+#ifdef LG_SECURITY_ENHANCEMENT_SQLOG
+        if (getpeername(fd, (struct sockaddr *)&addr, &addr_len) == 0)
+        {
+            inet_ntop(AF_INET, &addr.sin_addr, ip_str, sizeof(ip_str));
+        }
+        SqLog_I("TCP_accept(%d) %d <= from %s:%d\n",
+                fd, modesNetServices[j].port, ip_str, port);
+#endif
         if (fd >= MODES_NET_MAX_FD) {
+#ifdef LG_SECURITY_ENHANCEMENT_SQLOG
+            SqLog_E("Max FD reached. FD=%d, Close TCP_accept from %s:%d\n", fd, ip_str, port);
+#endif
             close(fd);
             return; /* Max number of clients reached. */
         }
@@ -2017,23 +2054,52 @@ void modesAcceptClients(void) {
         Modes.clients[fd] = c;
         anetSetSendBuffer(Modes.aneterr,fd,MODES_NET_SNDBUF_SIZE);
 
+
+
         if (Modes.maxfd < fd) Modes.maxfd = fd;
+#ifdef LG_SECURITY_ENHANCEMENT_SQLOG
+        if (*modesNetServices[j].socket == Modes.ros)
+        {
+            SqLog_I("RAW TCP_accept from %s:%d\n", ip_str, port);
+        }
+#endif
         if (*modesNetServices[j].socket == Modes.sbsos)
+        {
             Modes.stat_sbs_connections++;
+#ifdef LG_SECURITY_ENHANCEMENT_SQLOG
+            SqLog_I("SBS TCP_accept from %s:%d\n", ip_str, port);
+#endif
+        }
 #ifdef LG_SECURITY_ENHANCEMENT_TLS
-        if (*modesNetServices[j].socket == Modes.tlsbsos)
+        if ((*modesNetServices[j].socket == Modes.tlsbsos)
+            || (*modesNetServices[j].socket == Modes.tlros))
         {
             int iRet;
-            Modes.stat_tlsbs_connections++;
+            if (*modesNetServices[j].socket == Modes.tlsbsos)
+            {
+                Modes.stat_sbs_connections++; // TLS SBS is one of the sbs connections
+            }
             iRet = myAcceptSSL(Modes.ctx, fd, &Modes.ssl[fd]);
             printf("myAcceptSS(%p, fd=%d, ssl[%d]=%p) return %d\n", Modes.ctx, fd, fd, Modes.ssl[fd], iRet);
+
             if (iRet <= 0)
             {
+#ifdef LG_SECURITY_ENHANCEMENT_SQLOG
+                int iErr = SSL_get_error(Modes.ssl[fd], iRet);
+                SqLog_W("myAcceptSSL(%d, %p) failed, %s:%d return %d err=%d\n",
+                        fd, Modes.ssl[fd], ip_str, port, iRet, iErr);
+#endif
                 fprintf(stderr, "SSL_accept failed\n");
                 ERR_print_errors_fp(stderr);
+                close(fd);
             }
             else
             {
+#ifdef LG_SECURITY_ENHANCEMENT_SQLOG
+                SqLog_I("myAcceptSSL(%d, %p) succeeded from %s:%d\n",
+                        fd, Modes.ssl[fd], ip_str, port);
+
+#endif
                 printf("TLS connection established.\n");
             }
         }
@@ -2048,8 +2114,57 @@ void modesAcceptClients(void) {
 
 /* On error free the client, collect the structure, adjust maxfd if needed. */
 void modesFreeClient(int fd) {
+#ifdef LG_SECURITY_ENHANCEMENT_SQLOG
+    struct sockaddr_in client_addr, server_addr;
+    socklen_t addr_len = sizeof(struct sockaddr_in);
+    char ip_str[INET_ADDRSTRLEN] = "unknown";
+
+    if (getpeername(fd, (struct sockaddr *)&client_addr, &addr_len) == 0)
+    {
+        inet_ntop(AF_INET, &client_addr.sin_addr, ip_str, sizeof(ip_str));
+    }
+    else
+    {
+        SqLog_I("getpeername() failed\n");
+    }
+
+    if (getsockname(fd, (struct sockaddr *)&server_addr, &addr_len) == 0)
+    {
+        inet_ntop(AF_INET, &client_addr.sin_addr, ip_str, sizeof(ip_str));
+    }
+    else
+    {
+        SqLog_I("getsockname() failed\n");
+    }
+
+    SqLog_I("Closing fd=%d, %d <= %s:%d\n",
+            fd,
+            ntohs(server_addr.sin_port),
+            ip_str,
+            ntohs(client_addr.sin_port));
+#endif
+
+#ifdef LG_SECURITY_ENHANCEMENT_TLS
+    if (Modes.ssl[fd] != NULL)
+    {
+        SqLog_I("Closing port TLS port[%p]\n", Modes.ssl[fd]);
+        int shutdown_ret = SSL_shutdown(Modes.ssl[fd]);
+        if (shutdown_ret == 0)
+        {
+            // First call returns 0 → call again to complete bidirectional shutdown
+            shutdown_ret = SSL_shutdown(Modes.ssl[fd]);
+        }
+    };
+#endif
     close(fd);
     free(Modes.clients[fd]);
+#ifdef LG_SECURITY_ENHANCEMENT_TLS
+    if(Modes.ssl[fd] != NULL)
+    {
+       SSL_free(Modes.ssl[fd]); // Free SSL object
+       Modes.ssl[fd] = NULL;
+    };
+#endif
     Modes.clients[fd] = NULL;
 
     if (Modes.debug & MODES_DEBUG_NET)
@@ -2081,7 +2196,7 @@ void modesSendAllClients(int service, void *msg, int len) {
         if (c && c->service == service) {
 #ifdef LG_SECURITY_ENHANCEMENT_TLS
             int nwritten;
-            if (service == Modes.tlsbsos)
+            if ((service == Modes.tlsbsos) || (service == Modes.tlros))
             {
                 nwritten = SSL_write(Modes.ssl[j], msg, len);
             }
@@ -2112,6 +2227,9 @@ void modesSendRawOutput(struct modesMessage *mm) {
     *p++ = ';';
     *p++ = '\n';
     modesSendAllClients(Modes.ros, msg, p-msg);
+#ifdef LG_SECURITY_ENHANCEMENT_TLS
+    modesSendAllClients(Modes.tlros, msg, p - msg);
+#endif
 }
 
 
@@ -2574,7 +2692,15 @@ int main(int argc, char **argv) {
 
     /* Set sane defaults. */
     modesInitConfig();
-
+#ifdef LG_SECURITY_ENHANCEMENT_SQLOG
+     if (InitLogFromFile(LOG_KEY_FILE_PATH LOG_KEY_FILE_NAME) != 0) {
+        fprintf(stderr, "InitLog failed\n");
+        return 1;
+     } else {
+        SqLog_LogStart(argc, argv);
+        SqLog_setup_signal_handlers();
+     }
+#endif
     /* Parse the command line options */
     for (j = 1; j < argc; j++) {
         int more = j+1 < argc; /* There are more arguments. */
